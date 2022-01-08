@@ -1,0 +1,446 @@
+---
+title: "Echecs Branquignols"
+description: |
+  Quelques analyses des parties Branquignols de mars 2020 à janvier 2021
+author:
+  - name: Markov Erratique 
+    url: https://example.com/norajones
+    affiliation: Branquignol Echecephile
+    affiliation_url: https://www.cahiersdufootball.net/forum/le-fil-dont-vous-etes-le-heros-280?page=1405#3101976
+date: "`r Sys.Date()`"
+output: distill::distill_article
+---
+
+```{r pressure, echo=FALSE, warning=FALSE}
+# library(viridis)
+# library(tidyverse)
+# library(ggrepel)
+library(plotly)
+library(reshape2)
+library(wesanderson)
+library(ggplot2)
+# library(gapminder)
+# library(dygraphs)
+
+
+a=read.table("~/Documents/Chess/reformated_db.txt",sep="\t",head=T,stringsAsFactors = F)
+candi=read.table("users_with_maj.txt")
+poules=read.table("poules_saison4.txt",head=T,sep='\t')
+
+a$Opening = gsub(pattern = ":.*", 
+                replacement = "",x=a$Opening)
+
+
+
+
+a$CentipLost[which(a$CentipLost>0)]=0
+a[which(a$moveTime<0),"moveTime"]=NA
+a[which(a$moveTime==0),"moveTime"]=0.5
+
+V=c(which(a$player==a$White & a$Result == "1-0"),
+    which(a$player==a$Black & a$Result == "0-1"))
+N=which(a$Result=="1/2-1/2")
+D=c(which(a$player==a$Black & a$Result == "1-0"),
+    which(a$player==a$White & a$Result == "0-1"))
+
+a$ResultR=NA
+a$ResultR[V]="V"
+a$ResultR[D]="D"
+a$ResultR[N]="N"
+
+row.names(poules)=poules$user
+
+a$poule=NA
+a$pouleOpp=NA
+# for (i in 1:dim(a)[1]){
+#   if (a$player[i] %in% candi$V1){
+#     a$poule[i]= poules[a$player[i],"poule"]
+#     a$pouleOpp[i]= poules[a$opponent[i],"poule"]
+#     }
+# }
+
+for (i in 1:dim(poules)[1]){
+  a$poule[a$player==poules$user[i]]= poules[i,"poule"]
+  a$pouleOpp[a$opponent==poules$user[i]]= poules[i,"poule"]
+  
+}
+
+a$game=paste(a$date,a$White,a$Black,sep='-')
+a$gamePlayer=paste(a$date,a$White,a$Black,a$player,sep='-')
+
+a$evalTrunc=a$eval
+a$CentipLostTrunc=a$CentipLost
+
+a$evalTrunc[which(a$eval>10)]=10
+a$evalTrunc[which(a$eval< (-10))]=-10
+a$CentipLostTrunc[which(a$CentipLost>10)]=10
+a$CentipLostTrunc[which(a$CentipLost< (-10))]=-10
+a$CentipLostTrunc=abs(a$CentipLost)
+
+a$move2=a$move
+a$move2[which(a$move>40)]=40
+
+
+a$CentipLost=abs(a$CentipLost)*100
+  
+write.table(file="~/Documents/Chess/reformated_db_annotated.txt",a,quote = F,sep='\t')
+
+
+
+tokeep=which(a$White %in% candi$V1 & a$Black %in% candi$V1 )
+a_cand=a[tokeep,]
+poules=poules[order(poules$poule),]
+a_cand$player=ordered(a_cand$player,poules$user)
+
+a_poule1=subset(a_cand,player %in% poules$user[which(poules$poule==1)])
+a_poule2=subset(a_cand,player %in% poules$user[which(poules$poule==2)])
+a_poule3=subset(a_cand,player %in% poules$user[which(poules$poule==3)])
+a_poule4=subset(a_cand,player %in% poules$user[which(poules$poule==4)])
+a_poule5=subset(a_cand,player %in% poules$user[which(poules$poule==5)])
+
+a_cand$pouleNum=a_cand$poule
+a_cand$poule=as.factor(a_cand$poule)
+
+a_cand$time[a_cand$time>1200]=1200
+# 
+#   p=ggplot(a_cand[which(a_cand$poule==a_cand$pouleOpp),],aes(x = time,y=CentipLost,col=player))+
+#   geom_smooth(se=F)+xlim(0,1200)+ylim(0,1000)
+# 
+# gg <- ggplotly(p)
+# gg <- plotly_build(gg) 
+# for (i in c(1:40)[-c(1,6,13)]){
+# gg$x$data[[i]]$visible ="legendonly"}
+# gg
+
+
+# p=ggplot(a_cand,aes(x = time/60,y=CentipLost,col=poule))+
+#   geom_smooth()+ylab("Centipions Perdus")+xlab("Temps Restant (minutes)")
+# gg=ggplotly(p)
+# gg$x$data[[6]]$visible ="legendonly"
+# gg
+
+
+whoLeadsFirst=function(x){
+  pos=min(which(abs(x$eval)>2))
+  if (x$eval[pos] >0){res=x$player[pos]
+  }else{
+    res=x$opponent[pos]
+  }
+  return(res)
+}
+
+a_cand$LeadFirst=NA
+for (thisGame in unique(a_cand$game)){
+  pos=which(a_cand$game==thisGame)
+  a_cand$LeadFirst[pos]=whoLeadsFirst(a_cand[pos,])
+}
+
+Y=which(a_cand$LeadFirst==a_cand$player)
+a_cand$LeadFirstYN="N"
+a_cand$LeadFirstYN[Y]="Y"
+
+
+
+dat=tapply(a_cand$CentipLost,a_cand$player,mean)
+dat2=tapply(a_cand$CentipLost*a_cand$moveTime,a_cand$player,function(x) mean(x,na.rm=T))
+
+FirstAdv=tapply(a_cand$eval,a_cand$gamePlayer,function(x) min(which(abs(x)>2)))
+
+
+dat3=tapply(a_cand$CentipLost,a_cand$gamePlayer,function(x) mean(x,na.rm=T))
+dat4=tapply(a_cand$date,a_cand$gamePlayer,function(x) unique(x))
+dat4=as.Date(gsub("\\.","-",dat4))
+season=dat3
+
+season[which(dat4<=as.Date("2021-03-29"))]=1
+season[which(dat4>as.Date("2021-03-29") & dat4<=as.Date("2021-05-27"))]=2
+season[which(dat4>as.Date("2021-05-27") & dat4<=as.Date("2021-09-28"))]=3
+season[which(dat4>as.Date("2021-09-28"))]=4
+# dat4[which(season<0)]
+
+season2=dat3
+season2[which(season==1)]="Avant Mars 2021"
+season2[which(season==2)]="Mars 2021 -- Mai 2021"
+season2[which(season==3)]="Juin 2021 -- Sept. 2021"
+season2[which(season==4)]="Oct. 2021 -- Dec. 2021"
+
+season2=ordered(season2,levels=unique(season2))
+season=season2
+
+dat5=tapply(a_cand$poule,a_cand$gamePlayer,function(x) unique(x))
+dat6=tapply(a_cand$player,a_cand$gamePlayer,function(x) unique(x))
+tt=data.frame("centip"=dat3,"date"=dat4,"poule"=dat5,"player"=dat6)
+tt=tt[-which(is.na(tt$poule)),]
+
+
+
+
+pouleGame=tapply(a_cand$poule,a_cand$gamePlayer,function(x) unique(x))
+LeadFirst=tapply(a_cand$LeadFirstYN,a_cand$gamePlayer,function(x) unique(x))
+playerGame=tapply(as.character(a_cand$player),a_cand$gamePlayer,function(x) unique(x))
+pouleOpp=tapply(a_cand$pouleOpp,a_cand$gamePlayer,function(x) unique(x))
+Res=tapply(a_cand$Result,a_cand$gamePlayer,function(x) unique(x))
+Opening=tapply(a_cand$Opening,a_cand$gamePlayer,function(x) unique(x))
+ResR=tapply(a_cand$ResultR,a_cand$gamePlayer,function(x) unique(x))
+Moves=tapply(a_cand$move,a_cand$gamePlayer,function(x) max(x))
+Centip=tapply(a_cand$CentipLost,a_cand$gamePlayer,function(x) mean(x,na.rm=T))
+FirstBlund=tapply(a_cand$CentipLost,a_cand$gamePlayer,function(x) min(which(abs(x)>200)))
+CentipGamePart <- tapply(a_cand$CentipLost, list(a_cand$gamePlayer, Moves=cut(a_cand$move, breaks=c(0,15,30,200), 
+                                                                       include.lowest=TRUE)), mean,na.rm=T)
+CentipTime <- tapply(a_cand$CentipLost, list(a_cand$gamePlayer, time=cut(a_cand$time, breaks=c(0,20,10000), 
+                                                                              include.lowest=TRUE)), mean,na.rm=T)
+
+colnames(CentipTime)=c("CentipZeitnot","CentipWTime") 
+colnames(CentipGamePart)=c("CentipOp","CentipMid","CentipEnd") 
+GlobalStats=data.frame("Result"=Res,"ResultR"=ResR,"Moves"=Moves,"FirstBlund"=FirstBlund,
+                       "CentipLost"=Centip,"poule"=pouleGame,"player"=playerGame,
+                       LeadFirst,season,"CentipTime"=CentipTime,"CentipGamePart"=CentipGamePart,
+                       pouleOpp,Opening)
+
+# colnames(GlobalStats)
+GlobalStats$ResultR=as.factor(GlobalStats$ResultR)
+GlobalStats$pouleNum=GlobalStats$poule
+GlobalStats$poule=as.factor(GlobalStats$poule)
+
+#Not Great
+GlobalStats$FirstBlund[GlobalStats$FirstBlund=="Inf"]=50
+GlobalStats$FirstBlund[GlobalStats$FirstBlund>50]=50
+
+GlobalStats$CentipAdv=NA
+GlobalStats$CentipAdv[seq(1,dim(GlobalStats)[1],2)]=GlobalStats$CentipLost[seq(2,dim(GlobalStats)[1],2)]
+GlobalStats$CentipAdv[seq(2,dim(GlobalStats)[1],2)]=GlobalStats$CentipLost[seq(1,dim(GlobalStats)[1],2)]
+
+GlobalStats$CentipAdvOp=NA
+GlobalStats$CentipAdvOp[seq(1,dim(GlobalStats)[1],2)]=GlobalStats$CentipGamePart.CentipOp[seq(2,dim(GlobalStats)[1],2)]
+GlobalStats$CentipAdvOp[seq(2,dim(GlobalStats)[1],2)]=GlobalStats$CentipGamePart.CentipOp[seq(1,dim(GlobalStats)[1],2)]
+
+GlobalStats$CentipAdvMid=NA
+GlobalStats$CentipAdvMid[seq(1,dim(GlobalStats)[1],2)]=GlobalStats$CentipGamePart.CentipMid[seq(2,dim(GlobalStats)[1],2)]
+GlobalStats$CentipAdvMid[seq(2,dim(GlobalStats)[1],2)]=GlobalStats$CentipGamePart.CentipMid[seq(1,dim(GlobalStats)[1],2)]
+
+GlobalStats$CentipAdvEnd=NA
+GlobalStats$CentipAdvEnd[seq(1,dim(GlobalStats)[1],2)]=GlobalStats$CentipGamePart.CentipEnd[seq(2,dim(GlobalStats)[1],2)]
+GlobalStats$CentipAdvEnd[seq(2,dim(GlobalStats)[1],2)]=GlobalStats$CentipGamePart.CentipEnd[seq(1,dim(GlobalStats)[1],2)]
+
+
+GlobalStats$Conv=NA
+GlobalStats$Conv[which(GlobalStats$ResultR=="V" & GlobalStats$LeadFirst == "Y")]="Conversion"
+GlobalStats$Conv[which(GlobalStats$ResultR=="V" & GlobalStats$LeadFirst == "N")]="Retournement"
+GlobalStats$Conv[which(GlobalStats$ResultR=="D" & GlobalStats$LeadFirst == "Y")]="Vend"
+uu=table(GlobalStats$poule,GlobalStats$Conv)
+vv=table(GlobalStats$poule,GlobalStats$ResultR)
+dat=data.frame("value"=c(uu[,1]/vv[,3],uu[,2]/vv[,3]),
+               variable=c(rep("conv",5),rep("ret",5)),
+               "poule"=rep(c("poule1","poule2","poule3","poule4","poule5"),2))
+
+# p=ggplot(dat,aes(x=poule,y=value,fill=variable))+
+#   geom_bar(position = position_dodge(),stat = "identity")
+# print(p)
+
+GlobalStatsSameLev=GlobalStats[which(abs(GlobalStats$pouleNum - GlobalStats$pouleOpp)<1),]
+GlobalStatsSameLev$Conv=NA
+GlobalStatsSameLev$Conv[which(GlobalStatsSameLev$ResultR=="V" & GlobalStatsSameLev$LeadFirst == "Y")]="Conversion"
+GlobalStatsSameLev$Conv[which(GlobalStatsSameLev$ResultR=="V" & GlobalStatsSameLev$LeadFirst == "N")]="Retournement"
+GlobalStatsSameLev$Conv[which(GlobalStatsSameLev$ResultR=="D" & GlobalStatsSameLev$LeadFirst == "Y")]="Vend"
+uu=table(GlobalStatsSameLev$poule,GlobalStatsSameLev$Conv)
+vv=table(GlobalStatsSameLev$poule,GlobalStatsSameLev$ResultR)
+dat=data.frame("value"=c(uu[,1]/vv[,3],uu[,2]/vv[,3])*100,
+               variable=c(rep("conv",5),rep("ret",5)),
+               "poule"=rep(c("poule1","poule2","poule3","poule4","poule5"),2))
+
+ttOp=table(GlobalStats$Opening)
+
+
+
+p=ggplot(dat,aes(x=poule,y=value,fill=variable))+
+  geom_bar(position = position_dodge(),stat = "identity")+
+  ylab("Pourcentage")
+print(p)
+
+
+p=ggplot(GlobalStats,aes(x=poule,fill=Result))+
+  geom_bar(stat = "count",position = position_dodge())+ylab("Nombre de Parties")
+ggplotly(p)
+
+# GlobalStats$Opening
+GlobalStats$Opening[which(GlobalStats$Opening == "Benko Gambit Accepted")]="Benko Gambit"
+GlobalStats$Opening[which(GlobalStats$Opening == "Benko Gambit Declined")]="Benko Gambit"
+
+
+GlobalStats$Opening[which(GlobalStats$Opening %in% names(which(ttOp<10)))]=" Autres"
+
+
+
+
+uu=table(GlobalStats$Opening)
+sum(uu)
+dat=data.frame("value"=uu/sum(uu)*100,"Ouverture"=names(uu))
+
+colnames(dat)
+p=ggplot(dat,aes(fill=Ouverture,y=value.Freq,x=Ouverture))+
+  geom_bar(stat = "identity",position = position_dodge())+ylab("Pourcentagde de parties jouées")+theme(axis.text.x=element_blank())
+ggplotly(p)
+
+p=ggplot(GlobalStats,aes(y=Moves,x=poule,fill=poule))+
+  geom_boxplot()+ylab("Nombre de coups joués")
+gg=ggplotly(p)
+gg$x$data[[6]]$visible ="legendonly"
+gg
+
+
+p=ggplot(subset(GlobalStatsSameLev,!is.na(GlobalStatsSameLev$poule)),aes(y=CentipLost,x=poule,fill=season,na.rm=T))+ylab("Centipions Perdus")+
+  geom_boxplot()+ylim(0,600)+scale_fill_hue()
+# +theme(legend.position = "none")
+# print(p+facet_wrap(.~poule,scales = "free",nrow = 3))
+ggplotly(p) %>% layout(boxmode="group")
+
+
+
+
+p=ggplot(subset(GlobalStatsSameLev,!is.na(GlobalStatsSameLev$poule)),aes(y=FirstBlund,x=poule,fill=season))+
+  geom_boxplot()+scale_fill_hue()+ylab("Première Bourde (-200 centipions)")
+ggplotly(p) %>%   layout(boxmode = "group")
+
+
+pouleGame=tapply(GlobalStats$poule,GlobalStats$player,function(x) unique(x))
+Moves=tapply(GlobalStats$Moves,GlobalStats$player,function(x) mean(x))
+Centip=tapply(GlobalStats$CentipLost,GlobalStats$player,function(x) mean(x,na.rm=T))
+FirstBlund=tapply(GlobalStats$FirstBlund,GlobalStats$player,mean)
+VicPerc=tapply(GlobalStats$ResultR,GlobalStats$player, function(x) length(which(x=="V"))/length(x) )
+Conv=tapply(GlobalStats$Conv,GlobalStats$player, function(x) length(which(x=="Conversion")))
+Return=tapply(GlobalStats$Conv,GlobalStats$player, function(x) length(which(x=="Retournement")))
+Lead=tapply(GlobalStats$LeadFirst,GlobalStats$player, function(x) length(which(x=="Y")))
+Behind=tapply(GlobalStats$LeadFirst,GlobalStats$player, function(x) length(which(x=="N")))
+CentipOp=tapply(GlobalStats$CentipGamePart.CentipOp,GlobalStats$player,function(x) mean(x,na.rm=T))
+CentipMid=tapply(GlobalStats$CentipGamePart.CentipMid,GlobalStats$player,function(x) mean(x,na.rm=T))
+CentipEnd=tapply(GlobalStats$CentipGamePart.CentipEnd,GlobalStats$player,function(x) mean(x,na.rm=T))
+
+CentipAdvOp=tapply(GlobalStats$CentipAdvOp,GlobalStats$player,function(x) mean(x,na.rm=T))
+CentipAdvMid=tapply(GlobalStats$CentipAdvMid,GlobalStats$player,function(x) mean(x,na.rm=T))
+CentipAdvEnd=tapply(GlobalStats$CentipAdvEnd,GlobalStats$player,function(x) mean(x,na.rm=T))
+
+CentipZeitnot=tapply(GlobalStats$CentipTime.CentipZeitnot,GlobalStats$player,function(x) mean(x,na.rm=T))
+CentipwTime=tapply(GlobalStats$CentipTime.CentipWTime,GlobalStats$player,function(x) mean(x,na.rm=T))
+colnames(CentipGamePart)=c("CentipOp","CentipMid","CentipEnd") 
+MoveRes <- tapply(GlobalStats$Moves, list(GlobalStats$player, GlobalStats$ResultR),mean,na.rm=T)
+colnames(MoveRes)=c("MoveDef","MoveDraw","MoveVic")
+
+PlayerStats=data.frame("Moves"=Moves,"FirstBlund"=FirstBlund,     "CentipLost"=Centip,"poule"=pouleGame,ReturnRate=Return/Behind,VicPerc,ConvRate=Conv/Lead,
+                                CentipOp,CentipMid,CentipEnd,CentipwTime,CentipZeitnot,MoveRes)
+
+
+
+## VS same poule
+
+pouleGame=tapply(GlobalStatsSameLev$poule,GlobalStatsSameLev$player,function(x) unique(x))
+# Res=tapply(GlobalStatsSameLev$Result,GlobalStatsSameLev$player,function(x) unique(x))
+Moves=tapply(GlobalStatsSameLev$Moves,GlobalStatsSameLev$player,function(x) mean(x))
+Centip=tapply(GlobalStatsSameLev$CentipLost,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+FirstBlund=tapply(GlobalStatsSameLev$FirstBlund,GlobalStatsSameLev$player,mean)
+VicPerc=tapply(GlobalStatsSameLev$ResultR,GlobalStatsSameLev$player, function(x) length(which(x=="V"))/length(x) )
+Conv=tapply(GlobalStatsSameLev$Conv,GlobalStatsSameLev$player, function(x) length(which(x=="Conversion")))
+Return=tapply(GlobalStatsSameLev$Conv,GlobalStatsSameLev$player, function(x) length(which(x=="Retournement")))
+Lead=tapply(GlobalStatsSameLev$LeadFirst,GlobalStatsSameLev$player, function(x) length(which(x=="Y")))
+Behind=tapply(GlobalStatsSameLev$LeadFirst,GlobalStatsSameLev$player, function(x) length(which(x=="N")))
+CentipOp=tapply(GlobalStatsSameLev$CentipGamePart.CentipOp,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+CentipMid=tapply(GlobalStatsSameLev$CentipGamePart.CentipMid,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+CentipEnd=tapply(GlobalStatsSameLev$CentipGamePart.CentipEnd,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+
+CentipAdvOp=tapply(GlobalStatsSameLev$CentipAdvOp,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+CentipAdvMid=tapply(GlobalStatsSameLev$CentipAdvMid,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+CentipAdvEnd=tapply(GlobalStatsSameLev$CentipAdvEnd,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+
+CentipZeitnot=tapply(GlobalStatsSameLev$CentipTime.CentipZeitnot,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+CentipwTime=tapply(GlobalStatsSameLev$CentipTime.CentipWTime,GlobalStatsSameLev$player,function(x) mean(x,na.rm=T))
+colnames(CentipGamePart)=c("CentipOp","CentipMid","CentipEnd") 
+MoveRes <- tapply(GlobalStatsSameLev$Moves, list(GlobalStatsSameLev$player, GlobalStatsSameLev$ResultR),mean,na.rm=T)
+colnames(MoveRes)=c("MoveDef","MoveDraw","MoveVic")
+
+PlayerStatsSameLevel=data.frame("Moves"=Moves,"FirstBlund"=FirstBlund,
+                       "CentipLost"=Centip,"poule"=pouleGame,ReturnRate=Return/Behind,VicPerc,ConvRate=Conv/Lead,
+                       CentipOp,CentipAdvOp,CentipMid,CentipAdvMid,CentipEnd,CentipAdvEnd,CentipwTime,CentipZeitnot,MoveRes)
+
+PlayerStats$player=rownames(PlayerStats)
+poules=poules[order(poules$poule),]
+PlayerStats$player=ordered(PlayerStats$player,poules$user)
+PlayerStatsSameLevel$player=rownames(PlayerStatsSameLevel)
+PlayerStatsSameLevel$player=ordered(PlayerStatsSameLevel$player,poules$user)
+PlayerStats$poule =as.factor(PlayerStats$poule)
+PlayerStatsSameLevel$poule =as.factor(PlayerStatsSameLevel$poule)
+```
+
+
+```{r, layout="l-body-outset", fig.width=6, fig.height=8,echo=FALSE}
+p=ggplot(PlayerStats,aes(x=FirstBlund,y=CentipLost,col=player,shape=poule,size=1.1))+
+  geom_point()+theme_minimal(20)+ylab("Centipions Perdus")+xlab("Première Bourde")
+ggplotly(p)
+```
+
+
+```{r ParPoule, echo=FALSE,layout="l-screen-inset shaded"}
+
+
+  
+p=ggplot(PlayerStatsSameLevel,aes(x=FirstBlund,y=abs(CentipLost),col=player,size=1.1))+
+  geom_point()+theme_minimal(20)+theme(legend.position="none")+
+  ylab("Centipions Perdus")+xlab("Première Bourde")
+ggplotly(p+facet_wrap(.~poule,ncol=5,scales = "free"))
+
+
+
+p=ggplot(PlayerStatsSameLevel,aes(x=ReturnRate,y=ConvRate,shape=poule,col=player,size=1.1))+
+  geom_point()+theme_minimal(20)+theme(legend.position="none")+
+  ylab("Taux de Conversion")+xlab("Taux de retournement")
+ggplotly(p+facet_wrap(.~poule,ncol=5,scales = "free"))
+# ggplotly(p)
+
+
+plotlist = list()
+
+for (i in 1:5){
+  dat=subset(PlayerStatsSameLevel,poule==i)
+  dat2=melt(dat[,c("CentipOp",
+                   "CentipMid",
+                   "CentipEnd","player","poule")],id.vars = c("player","poule"))
+  dat3=melt(dat[,c("CentipAdvOp",
+                   "CentipAdvMid",
+                   "CentipAdvEnd","player")],id.vars = "player",variable.name = "variable2",value.name = "value2")
+  dat4=cbind(dat2,dat3[,2:3])
+  dat4$player=as.character(dat4$player)
+  dat4$poule=as.factor(dat4$poule)
+  
+  dat4$variable3=as.character(dat4$variable)
+  dat4$variable3[which(dat4$variable3=="CentipOp")]="Ouverture"
+  dat4$variable3[which(dat4$variable3=="CentipMid")]="Milieu de Jeu"
+  dat4$variable3[which(dat4$variable3=="CentipEnd")]="Finale"
+  dat4$variable3=ordered(dat4$variable3,levels=c("Ouverture","Milieu de Jeu","Finale"))
+  
+  p=ggplot(dat4,aes(x=value,y=(value)/(value+value2),shape=poule,col=player,size=1.1))+
+  geom_point()+
+  theme_minimal(20)+theme(plot.title = element_text(hjust = 0.5))+
+    scale_shape(guide=F,drop=F)+
+  xlab("Centipions perdus")+ylab("Avantage Obtenu")+
+  ggtitle(paste("Poule ",i))
+
+   plotlist[[i]] = ggplotly(p+facet_wrap(.~variable3,scales = "free"))
+}
+htmltools::tagList(setNames(plotlist, NULL))
+```
+
+```{r Avec le temps, layout="l-body-outset", fig.width=6, fig.height=8,echo=FALSE}
+
+  p=ggplot(a_cand[which(a_cand$poule == a_cand$pouleOpp),],aes(x = time,y=CentipLost,col=player))+
+  geom_smooth(se=F)+xlim(0,1200)+ylab("Centipions Perdus")+
+    theme_minimal(20)+
+    xlab("Temps Restant (minutes)")+scale_y_continuous(breaks = seq(0,2000,100))
+
+gg <- ggplotly(p) %>% layout(yaxis = list(range=c(0,1000)))
+gg <- plotly_build(gg) 
+for (i in c(1:40)[-c(1,6,13)]){
+gg$x$data[[i]]$visible ="legendonly"}
+gg
+
+
+```
+
+
